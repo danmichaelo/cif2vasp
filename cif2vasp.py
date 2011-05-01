@@ -1,0 +1,534 @@
+#! /usr/bin/env python
+#
+# Inspired by: http://encina.northwestern.edu/index.php/Cif_to_VASP
+#
+# This script creates INCAR POSCAR POTCAR and KPOINTS from the 
+# name_of_system.cif and potentials located in [...]
+#
+#   $ cif2vasp name_of_system
+# 
+# INSTALLATION: 
+# 
+# This script is NOT self-contained, since it makes use of external 
+# programs and python libraries. Please make sure you have installed
+# recent versions of the following software:
+# 
+#   GULP: 
+#   https://www.ivec.org/gulp/
+#
+#   AFLOW (aconvasp): 
+#   http://nietzsche.mems.duke.edu/aflow.html
+#
+#   ATAT (ezvasp): 
+#   http://www.its.caltech.edu/~avdw/atat/
+#
+#   PyCifRW 3.3: 
+#   http://pycifrw.berlios.de/ 
+#
+# Optional:
+#
+#   Computational Crystallography Toolbox (CCTBX)
+#   http://cctbx.sourceforge.net
+#
+# USAGE: 
+#
+# Create your INCAR file first. Make sure that the file has '[INCAR]' 
+# at the beginning, KPPRA, DOGGA, KSCHEME, and other relevant ATAT 
+# input tags at the end.
+# Also, make sure it has a [POSCAR] appendage as the last line, with 
+# no newlines afterward.
+#
+#E.g.
+#[INCAR]
+#-Incar stuff that you want
+#
+#KSCHEME = MP
+#DOGGA
+#KPPRA = 10000
+#[POSCAR]
+#
+
+
+import getopt, sys, os, re, subprocess
+from CifFile import CifFile
+#from cctbx import uctbx, sgtbx, crystal
+#from cctbx import xray
+#from cctbx import crystal
+#from cctbx.array_family import flex
+
+def usage():
+    print "Usage: cif2vasp.py filename\nA filename is a valid .cif-file."
+
+
+def readCifFile(cifFile):
+    if not os.path.exists(cifFile):
+        raise IOError("CIF file '%s' was not found!" % (cifFile))
+    
+    cf = CifFile(cifFile)
+    print "------------------------------------------------------------------"
+    if len(cf) != 1:
+        raise StandardError("The cif file contains %i data blocks, while one was expected")
+        # A cif file can contain several "datablocks" that each start
+        # with "data_".
+    
+    cb = cf[cf.keys()[0]]                               # open the first block
+    AA = float(re.match('([0-9.]*)',cb['_cell_length_a']).group(0))
+    BB = float(re.match('([0-9.]*)',cb['_cell_length_b']).group(0))
+    CC = float(re.match('([0-9.]*)',cb['_cell_length_c']).group(0))
+    alpha = float(cb['_cell_angle_alpha'])
+    beta = float(cb['_cell_angle_beta'])
+    gamma = float(cb['_cell_angle_gamma'])
+    SG = int(cb['_symmetry_Int_Tables_number'])              # spacegroup
+  
+    atomTypes = []
+    atoms = ''
+    fracOccFound = False
+    firstAtom = True
+    atoms = []
+    for atom in cb.GetLoop('_atom_site_label'):
+        atomKeys = dir(atom)
+        if '_atom_site_type_symbol' in atomKeys:
+            m = re.match('[a-z]*',atom._atom_site_type_symbol,re.I)
+            atomType = m.group(0)
+        else:
+            m = re.match('[a-z]*',atom._atom_site_label,re.I)
+            atomType = m.group(0)
+        
+        atomLabel = atom._atom_site_label
+
+        if '_atom_site_occupancy' in atomKeys:
+            occ = float(atom._atom_site_occupancy)
+            if not occ == 1.0:
+                if not fracOccFound: 
+                    print " "
+                print "  WARNING: Fractional occupancy (" + str(occ) +") " \
+                    + "found for atom of type " + atomType + "."                
+                fracOccFound = True
+        else:
+            occ = 1.0
+        
+        # Some crystal structures obtained by neutron diffraction use D for H:
+        if atomType == 'D':
+            atomType = 'H'
+            atomLabel.replace('H','D')
+        
+        if '_atom_site_symmetry_multiplicity' in atomKeys and '_atom_site_Wyckoff_symbol' in atomKeys:
+            atomTypes.append(atomType+' at '+atom._atom_site_symmetry_multiplicity+atom._atom_site_Wyckoff_symbol)
+        else:
+            atomTypes.append(atomType)
+        
+        atomPos = [atom._atom_site_fract_x, atom._atom_site_fract_y, atom._atom_site_fract_z]
+        for p in atomPos:
+            pp = p.split(".")
+            if len(pp) is 2:
+                decimals = p.split(".")[1]
+                if len(decimals) > 3 and len(decimals) < 6 and decimals[0] == decimals[1] and decimals[-1] != "0":
+                    print "\n  ---------------------\n"\
+                        + "  Warning: If the fractional coordinate "+p+" is a recurring decimal, such as 1/3,\n" \
+                        + "    then it is necessary to specify this value to six decimal places to be sure of \n" \
+                        + "    it being recognised correctly as a spcecial position.\n  ------------------" 
+		
+		
+		# The coordinates of the atom (_atom_site_fract_x/y/z) may have 
+		# a last digit in parenthesis, like "0.6636(7)". Therefore we
+		# extract the part consisting of only digits and a decimal separator:
+		p = re.compile('[0-9.]*');
+        atomX = float(p.match(atom._atom_site_fract_x).group())
+        atomY = float(p.match(atom._atom_site_fract_y).group())
+        atomZ = float(p.match(atom._atom_site_fract_z).group())
+        
+        #atoms += "%s %f %f %f %f %f\n" % (atomType, atomX, atomY, atomZ, 0.0, occ)
+        atoms.append({'label': atomLabel, 'type': atomType, 'pos': (atomX,atomY,atomZ) })
+        firstAtom = False
+
+    if fracOccFound: 
+        print " "
+        print "ERROR: Fractional occupancies are not currently supported.\n"
+        exit()
+    
+    print "  Atom types: " + ', '.join(atomTypes)
+    
+    return {'spacegroup': SG, 'unit_cell': [AA,BB,CC,alpha,beta,gamma], 'scatterers': atoms}
+    
+def cif2vaspUsingCCTBX(jobname, ezvasp = False):
+    
+    #print "WARNING: This script does NOT work with files that have fractional occupancies."
+
+    # os.mkdir(jobname)
+    
+    cif = readCifFile(jobname+'.cif')
+
+    print "CIF file read successfully:"
+
+    unit_cell = uctbx.unit_cell(cif['unit_cell'])
+    space_group_info = sgtbx.space_group_info(symbol=cif['spacegroup'])
+    crystal_symmetry = crystal.symmetry(unit_cell=unit_cell,space_group_info=space_group_info)
+    crystal_symmetry.show_summary()
+    
+    print " "
+    #print "  Space group:",SG
+    #print "  a=%s, b=%s, c=%s, alpha=%s, beta=%s, gamma=%s" % (AA,BB,CC,alpha,beta,gamma)
+    
+    #print cif['scatterers']
+    
+    scatterers = flex.xray_scatterer()
+    for s in cif['scatterers']:
+        scatterers.append(xray.scatterer(label=s['label'], site=s['pos']))
+
+    print
+    print "--------------- icsd_structure ---------------"
+    print
+    icsd_structure = xray.structure(crystal_symmetry=crystal_symmetry, scatterers=scatterers)
+    icsd_structure.show_summary().show_scatterers()
+    #print 
+    #icsd_structure.show_distances(distance_cutoff=2.5)
+  
+    print
+    print "--------------- primitive_structure ---------------"
+    print
+    primitive_structure = icsd_structure.primitive_setting()
+    primitive_structure.show_summary().show_scatterers()
+
+    print
+    print "--------------- p1_structure ---------------"
+    print
+    p1_structure = primitive_structure.expand_to_p1()
+    p1_structure.show_summary().show_scatterers()
+    print
+    print "OK"    
+   
+# Requires existing gulp out file for unit cell
+def xyz2vaspUsingGULP(jobname, ezvasp = False):
+    
+    # convasp will convert your atom positions into fractional 
+    # and produce a file that looks just like a VASP POSCAR:    
+    runConvasp(
+        jobName = jobname,
+        gulpOutputFile = jobname + '.gulp.out',
+        xyzFile = jobname+'.xyz',
+        ezvaspStyle = ezvasp
+    )
+    
+    if ezvasp:
+        prepareEzvaspInput(jobname)
+        sys.stdout.write("Creating INCAR, POSCAR, POTCAR, KPOINTS using ezvasp... ")    
+        sys.stdout.flush()
+        os.system("ezvasp -n vasp.in")
+        sys.stdout.write("done\n")
+    else:
+        os.rename(jobname+'.convasp.out','POSCAR')
+    
+    
+def cif2vaspUsingGULP(jobname, ezvasp = False):
+
+    prepareGulpInput(
+        cifFile = jobname + '.cif', 
+        gulpFile = jobname + '.gulp.in',
+        jobName = jobname
+    )
+    runGulp(jobname)
+    
+    # convasp will convert your atom positions into fractional 
+    # and produce a file that looks just like a VASP POSCAR:    
+    runConvasp(
+        jobName = jobname,
+        gulpOutputFile = jobname + '.gulp.out',
+        xyzFile = jobname+'.xyz',
+        ezvaspStyle = ezvasp
+    )
+    
+    if ezvasp:
+        prepareEzvaspInput(jobname)
+        sys.stdout.write("Creating INCAR, POSCAR, POTCAR, KPOINTS using ezvasp... ")    
+        sys.stdout.flush()
+        os.system("ezvasp -n vasp.in")
+        sys.stdout.write("done\n")
+    else:
+        os.rename(jobname+'.convasp.out','POSCAR')
+    
+
+def prepareEzvaspInput(jobname):
+
+    ezvaspIn = open('vasp.in','w')
+
+    incar = file('INCAR')
+    while True:
+        line = incar.readline()
+        if len(line) == 0:
+            break
+        ezvaspIn.write(line) # notice comma
+    incar.close()
+
+    ezvaspIn.write('\n[POSCAR]\n') # notice comma
+
+    poscar = file(jobname + '.convasp.out')
+    lineNo = 0
+    while True:
+        lineNo += 1
+        line = poscar.readline()
+        if len(line) == 0:
+            break
+        if lineNo != 6: # ezvasp is not interested in atom counts line
+            ezvaspIn.write(line)
+    poscar.close()
+
+    ezvaspIn.close()
+
+
+def findLinesContaining(lines, str):
+    enumLines = enumerate(lines)
+    return [k for k, v in enumLines if str in v]
+
+# === CONVASP ======================================================================
+
+def runConvasp(gulpOutputFile, xyzFile, jobName, ezvaspStyle = True): 
+    """
+    Example file:
+        mgh2
+    1 <-- scaling factor (leave as one)
+            4.516800    0.000000    0.000000
+            0.000000    4.516800    0.000000
+            0.000000    0.000000    3.020500 <-- Cartesian lattice vectors (Angstrom)
+    2 4 <-- number of atoms of each type (2 Mg atoms, 4 H atoms)
+    Cartesian <-- coordinate style
+            0.000000000         0.000000000         0.000000000 Mg
+            2.258400000         2.258400000         1.510250000 Mg
+             1.382140800         1.382140800         0.000000000 H
+             3.134659200         3.134659200         0.000000000 H
+             3.640540800         0.876259200         1.510250000 H
+             0.876259200         3.640540800         1.510250000 H
+    """
+    
+    xyzfile = open(xyzFile,'r')         #read the GULP output files
+    outfile = open(gulpOutputFile,'r')
+    XYZ = xyzfile.readlines()
+    OUT = outfile.readlines()
+    
+    # Find cartesian lattice vectors in Gulp Output file:
+    lineNo = findLinesContaining(OUT, 'Cartesian lattice vectors (Angstroms)')[0];
+    latVec = [
+        OUT[lineNo + 2][:-1].split(),
+        OUT[lineNo + 3][:-1].split(),
+        OUT[lineNo + 4][:-1].split()
+    ] # :-1 removes \n
+    
+    # Find cartesian coordinates in xyz file:
+    atoms = []
+    atomTypes = []
+    atomCounts = []
+    atomCount = 0
+    for lineNo in range(2, len(XYZ)):
+        line = XYZ[lineNo].split()
+        atomType = line[0]
+        
+        if len(line) == 4:  # A valid coordinate line should have length 4
+            if ezvaspStyle:
+                # Include the element name if we are to use EzVasp ...
+                atoms.append("%s %s %s %s" % (line[1],line[2],line[3],atomType))
+            else:
+                # ... or drop it if we are to use Vasp directly:
+                atoms.append("%s %s %s" % (line[1],line[2],line[3]))
+        
+        if len(atomTypes) == 0:
+            atomTypes.append(atomType)
+        else:
+            if not atomTypes[len(atomTypes)-1] == atomType: # new atom type
+                atomTypes.append(atomType)
+                atomCounts.append(str(atomCount))
+                atomCount = 0
+        atomCount += 1
+    atomCounts.append(str(atomCount)) # store the count of the last atom type
+    
+    for i in range(len(atomTypes)):
+        print "  found %s atoms of type %s" % (atomCounts[i],atomTypes[i])
+    
+    convaspInput = [jobname,'1']
+    convaspInput.extend([' '.join(v) for v in latVec])
+    convaspInput.extend([' '.join(atomCounts),'Cartesian'])
+    convaspInput.extend(atoms)
+    stdin = '\n'.join(convaspInput)
+
+    sys.stdout.write("Converting to POSCAR format using aconvasp... ")  
+    p = subprocess.Popen(['aconvasp','--direct'], 
+            stdin = subprocess.PIPE, 
+            stdout = file(jobname+'.convasp.out',"w"),
+            stderr = subprocess.PIPE
+    ).communicate(stdin)
+    if p[1] != "":
+        print "\n" + p[1]
+        print "See "+jobname+".convasp.out for more details"
+        exit()
+    sys.stdout.write("done\n")
+    
+
+# === GULP ======================================================================
+
+def prepareGulpInput(cifFile, gulpFile, jobName): 
+    """
+    Example file:
+    mgh2
+    cell
+    4.5168 4.5168 3.0205 90.0 90.0 90.0
+    frac
+    Mg 0.0 0.0 0.0
+    H 0.306 0.306 0.0
+    space
+    136
+    output xyz mgh2
+    """
+    
+    if not os.path.exists(cifFile):
+        raise IOError("CIF file '%s' was not found!" % (cifFile))
+    
+    cf = CifFile(cifFile)
+    print "------------------------------------------------------------------"
+    if len(cf) != 1:
+        raise StandardError("The cif file contains %i data blocks, while one was expected")
+        # A cif file can contain several "datablocks" that each start
+        # with "data_".
+    
+    cb = cf[cf.keys()[0]]                               # open the first block
+    AA = float(re.match('([0-9.]*)',cb['_cell_length_a']).group(0))
+    BB = float(re.match('([0-9.]*)',cb['_cell_length_b']).group(0))
+    CC = float(re.match('([0-9.]*)',cb['_cell_length_c']).group(0))
+    alpha = float(cb['_cell_angle_alpha'])
+    beta = float(cb['_cell_angle_beta'])
+    gamma = float(cb['_cell_angle_gamma'])
+    
+
+    # Spacegroup number (1-230)
+    # '_symmetry_Int_Tables_number' has been superseded by '_space_group_IT_number'
+    if ('_space_group_IT_number' in cb) {
+        SG = int(cb['_space_group_IT_number'])
+    } else if ('_symmetry_Int_Tables_number' in cb) {
+        SG = int(cb['_symmetry_Int_Tables_number'])
+    } else {
+        print "WARNING: No space group specified. Assuming P1."
+        SG = 1
+    }
+   
+    #unit_cell = uctbx.unit_cell([AA,BB,CC,alpha,beta,gamma])
+    #space_group_info = sgtbx.space_group_info(symbol=cb['_symmetry_space_group_name_H-M'])
+    #crystal_symmetry = crystal.symmetry(unit_cell=unit_cell,space_group_info=space_group_info)
+    
+    #print "CIF file read successfully:"
+    #crystal_symmetry.show_summary()   
+    print " "
+    #print "  Space group:",SG
+    #print "  a=%s, b=%s, c=%s, alpha=%s, beta=%s, gamma=%s" % (AA,BB,CC,alpha,beta,gamma)
+    atomTypes = []
+    atoms = ''
+    fracOccFound = False
+    firstAtom = True
+    atoms = ""
+
+    # The coordinates of the atom (_atom_site_fract_x/y/z) may have 
+    # a last digit in parenthesis, like "0.6636(7)". Therefore we
+    # extract the part consisting of only digits and a decimal separator:
+    coordsMatch = re.compile('[0-9.]*');
+
+    for atom in cb.GetLoop('_atom_site_label'):
+        atomKeys = dir(atom)
+        if '_atom_site_type_symbol' in atomKeys:
+            m = re.match('[a-z]*',atom._atom_site_type_symbol,re.I)
+            atomType = m.group(0)
+        else:
+            m = re.match('[a-z]*',atom._atom_site_label,re.I)
+            atomType = m.group(0)
+
+        if '_atom_site_occupancy' in atomKeys:
+            occ = float(atom._atom_site_occupancy)
+            if not occ == 1.0:
+                if not fracOccFound: 
+                    print " "
+                print "  WARNING: Fractional occupancy (" + str(occ) +") " \
+                    + "found for atom of type " + atomType + "."                
+                fracOccFound = True
+        else:
+            occ = 1.0
+        
+        # Some crystal structures obtained by neutron diffraction use D for H:
+        if atomType == 'D':
+            atomType = 'H'
+        
+        if '_atom_site_symmetry_multiplicity' in atomKeys and '_atom_site_Wyckoff_symbol' in atomKeys:
+            atomTypes.append(atomType+' at '+atom._atom_site_symmetry_multiplicity+atom._atom_site_Wyckoff_symbol)
+        else:
+            atomTypes.append(atomType)
+        
+        atomPos = [atom._atom_site_fract_x, atom._atom_site_fract_y, atom._atom_site_fract_z]
+        for p in atomPos:
+            pp = p.split(".")
+            if len(pp) is 2:
+                decimals = p.split(".")[1]
+                if len(decimals) > 3 and len(decimals) < 6 and decimals[0] == decimals[1] and decimals[-1] != "0":
+                    print "\n  ---------------------\n"\
+                        + "  Warning: If the fractional coordinate "+p+" is a recurring decimal, such as 1/3,\n" \
+                        + "    then it is necessary to specify this value to six decimal places to be sure of \n" \
+                        + "    it being recognised correctly as a spcecial position.\n  ------------------" 
+		
+        atomX = float(coordsMatch.match(atom._atom_site_fract_x).group())
+        atomY = float(coordsMatch.match(atom._atom_site_fract_y).group())
+        atomZ = float(coordsMatch.match(atom._atom_site_fract_z).group())
+        
+        atoms += "%s %f %f %f %f %f\n" % (atomType, atomX, atomY, atomZ, 0.0, occ)
+        firstAtom = False
+
+    if fracOccFound: 
+        print " "
+        print "ERROR: Fractional occupancies are not currently supported.\n"
+        exit()
+    
+    print "  Atom types: " + ', '.join(atomTypes)
+    
+    gulpFile = open(gulpFile,'w')       #Create and write the GULP  
+    gulpFile.writelines([jobName+'\n',
+        'cell\n',
+        '%s %s %s %s %s %s\n' % (AA,BB,CC,alpha,beta,gamma),
+        'frac\n',
+        atoms,
+        'space\n',
+        str(SG)+'\n',
+        'output xyz '+jobName+'\n'
+    ])
+
+def runGulp(jobname):
+    sys.stdout.write("Prepare primitive cell in xyz format using Gulp... ") 
+    sys.stdout.flush()
+    p = subprocess.Popen("gulp", 
+        stdin = file(jobname+'.gulp.in'), 
+        stdout = file(jobname+'.gulp.out',"w"),
+        stderr = subprocess.PIPE
+    ).communicate() # communicate() returns a tuple (stdoutdata, stderrdata)
+    if p[1] != "":
+        print "\n" + p[1]
+        print "See "+jobname+".gulp.out for more details"
+        exit()
+
+    sys.stdout.write("done\n")
+
+
+if __name__ == "__main__":
+    try:    #parse the arguments
+        opts, args = getopt.getopt(sys.argv[1:], "h:v", ["help", "output="])
+    except getopt.GetoptError:
+        usage()
+        sys.exit(2)
+    if len(args) == 0:
+        usage()
+        sys.exit(2)
+    # print opts, args
+    filename = args[0]
+    if filename[-4:] == '.xyz':
+        jobname = filename[0:-4]
+        #cif2vaspUsingCCTBX(jobname)
+        xyz2vaspUsingGULP(jobname)
+    elif filename[-4:] == '.cif':
+        jobname = filename[0:-4]
+        #cif2vaspUsingCCTBX(jobname)
+        cif2vaspUsingGULP(jobname)
+    else:
+        print "The input file must have the file-ending '.cif'"
+        usage()
+        sys.exit(2)
+    
