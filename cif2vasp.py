@@ -354,14 +354,14 @@ def prepareGulpInput(cifFile, gulpFile, jobName):
 
     # Spacegroup number (1-230)
     # '_symmetry_Int_Tables_number' has been superseded by '_space_group_IT_number'
-    if ('_space_group_IT_number' in cb) {
+    if '_space_group_IT_number' in cb:
         SG = int(cb['_space_group_IT_number'])
-    } else if ('_symmetry_Int_Tables_number' in cb) {
+    elif '_symmetry_Int_Tables_number' in cb:
         SG = int(cb['_symmetry_Int_Tables_number'])
-    } else {
+    else:
         print "WARNING: No space group specified. Assuming P1."
         SG = 1
-    }
+    
    
     #unit_cell = uctbx.unit_cell([AA,BB,CC,alpha,beta,gamma])
     #space_group_info = sgtbx.space_group_info(symbol=cb['_symmetry_space_group_name_H-M'])
