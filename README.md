@@ -27,15 +27,16 @@ recent versions of the following software:
 
 ## Optional packages 
 
-I also tried to make a version of cif2vasp that made use of the
-Computational Crystallography Toolbox (CCTBX), but I ran into some
-problems with using CCTBX with my Python installation. 
-CCTBX is available from
-  http://cctbx.sourceforge.net
-Have a look at the `cif2vaspUsingCCTBX` function if you want to play with it.
- 
-I also experimented with ATAT (ezvasp) from
-    http://www.its.caltech.edu/~avdw/atat/
+It would be preferable to get rid of the dependency on GULP and AFLOW, 
+especially GULP which is a quite big package that takes some time to compile.
+
+One alternative I've looked into is the Computational Crystallography Toolbox (CCTBX), 
+which is a very powerful Python package available from http://cctbx.sourceforge.net.
+I ran into some problems implementing CCTBX with my current Python installation, but
+an experimental method `cif2vaspUsingCCTBX` is available as an alternative to
+`cif2vaspUsingGULP`.
+
+I also experimented with ATAT (ezvasp) from http://www.its.caltech.edu/~avdw/atat/ .
 You may try modifying the script to run `cif2vaspUsingGULP(jobname, ezvasp = True)`
 
 ## Usage
