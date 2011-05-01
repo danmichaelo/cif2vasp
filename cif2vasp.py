@@ -2,52 +2,8 @@
 #
 # Inspired by: http://encina.northwestern.edu/index.php/Cif_to_VASP
 #
-# This script creates INCAR POSCAR POTCAR and KPOINTS from the 
-# name_of_system.cif and potentials located in [...]
+# See README.md
 #
-#   $ cif2vasp name_of_system
-# 
-# INSTALLATION: 
-# 
-# This script is NOT self-contained, since it makes use of external 
-# programs and python libraries. Please make sure you have installed
-# recent versions of the following software:
-# 
-#   GULP: 
-#   https://www.ivec.org/gulp/
-#
-#   AFLOW (aconvasp): 
-#   http://nietzsche.mems.duke.edu/aflow.html
-#
-#   ATAT (ezvasp): 
-#   http://www.its.caltech.edu/~avdw/atat/
-#
-#   PyCifRW 3.3: 
-#   http://pycifrw.berlios.de/ 
-#
-# Optional:
-#
-#   Computational Crystallography Toolbox (CCTBX)
-#   http://cctbx.sourceforge.net
-#
-# USAGE: 
-#
-# Create your INCAR file first. Make sure that the file has '[INCAR]' 
-# at the beginning, KPPRA, DOGGA, KSCHEME, and other relevant ATAT 
-# input tags at the end.
-# Also, make sure it has a [POSCAR] appendage as the last line, with 
-# no newlines afterward.
-#
-#E.g.
-#[INCAR]
-#-Incar stuff that you want
-#
-#KSCHEME = MP
-#DOGGA
-#KPPRA = 10000
-#[POSCAR]
-#
-
 
 import getopt, sys, os, re, subprocess
 from CifFile import CifFile
