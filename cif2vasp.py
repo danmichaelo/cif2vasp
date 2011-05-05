@@ -343,20 +343,21 @@ def prepareGulpInput(cifFile, gulpFile, jobName):
         # A cif file can contain several "datablocks" that each start
         # with "data_".
     
+    print "Reading data block:",cf.keys()[0]
     cb = cf[cf.keys()[0]]                               # open the first block
     AA = float(re.match('([0-9.]*)',cb['_cell_length_a']).group(0))
     BB = float(re.match('([0-9.]*)',cb['_cell_length_b']).group(0))
     CC = float(re.match('([0-9.]*)',cb['_cell_length_c']).group(0))
     alpha = float(cb['_cell_angle_alpha'])
     beta = float(cb['_cell_angle_beta'])
-    gamma = float(cb['_cell_angle_gamma'])
+    gamma = float(cb['_cell_angle_gamma'])    
     
-
     # Spacegroup number (1-230)
     # '_symmetry_Int_Tables_number' has been superseded by '_space_group_IT_number'
-    if '_space_group_IT_number' in cb:
+    
+    if '_space_group_IT_number' in cb.keys():
         SG = int(cb['_space_group_IT_number'])
-    elif '_symmetry_Int_Tables_number' in cb:
+    elif '_symmetry_Int_Tables_number' in cb.keys():
         SG = int(cb['_symmetry_Int_Tables_number'])
     else:
         print "WARNING: No space group specified. Assuming P1."
