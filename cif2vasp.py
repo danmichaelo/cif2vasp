@@ -6,7 +6,6 @@
 #
 
 import getopt, sys, os, re, subprocess
-from CifFile import CifFile
 #from cctbx import uctbx, sgtbx, crystal
 #from cctbx import xray
 #from cctbx import crystal
@@ -21,6 +20,8 @@ def usage():
     print " -e, --engine   the backend to use for the conversion (gulp, ase or cctbx)"
 
 def readCifFile(cifFile):
+    from CifFile import CifFile
+
     if not os.path.exists(cifFile):
         raise IOError("CIF file '%s' was not found!" % (cifFile))
     
@@ -349,6 +350,7 @@ def prepareGulpInput(cifFile, gulpFile, jobName, verbose = False, auto_fractions
     136
     output xyz mgh2
     """
+    from CifFile import CifFile
     
     if not os.path.exists(cifFile):
         raise IOError("CIF file '%s' was not found!" % (cifFile))
