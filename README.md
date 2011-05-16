@@ -6,16 +6,15 @@ limitations not yet discovered.
 
 ## Usage
   
-    $ cif2vasp filename.cif [-v] [-f] [-e gulp|ase|cctbx] filename.cif
+    $ cif2vasp [-v] [-f] [-e gulp|ase|cctbx] filename.cif
 
 ## Backends
 
 The first version of this script was inspired by the procedure found at
-http://encina.northwestern.edu/index.php/Cif_to_VASP
+http://encina.northwestern.edu/index.php/Cif_to_VASP, but 
 I added a better CIF parsing routine using the PyCifRW library.
 While this version of the script (to be referred to as the GULP backend) 
 still works great, it has very many dependencies.
-
 In order to simplify things, I first looked into CCTBX, and later ASE,
 both powerful Python packages, with ASE being the simplest one to install
 and use.
@@ -23,7 +22,7 @@ and use.
 ### ASE
 
 The excellent ASE package, available from https://wiki.fysik.dtu.dk/ase/,
-almost eliminates the need for this script, since converting a file is done with three lines of code:
+almost eliminates the need for this script, since converting a file actually is done with just three lines of code:
 
     from ase import io
     atoms = io.read(jobname+'.cif')
@@ -35,7 +34,7 @@ CIF parsing, or want direct coordinates (ASE writes cartesian).
 ### GULP 
 
 This backend will give slightly more feedback during the conversion, and
-will provide a warning if fractional occupancies are detected. 
+will provide a warning if fractional occupancies are found. 
 It will write direct coordinates.
 
 Requirements:
