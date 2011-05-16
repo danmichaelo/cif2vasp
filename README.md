@@ -1,17 +1,44 @@
 # cif2vasp
 
 This script converts a file from the CIF format to VASP's POSCAR format.
-It does not work with fractional coordinates. There may also be other 
+It does not support fractional occupancies. There may also be other 
 limitations not yet discovered.
 
-This script is inspired by the procedure found at
+## Usage
+  
+    $ cif2vasp filename.cif [-v] [-f] [-e gulp|ase|cctbx] filename.cif
+
+## Backends
+
+The first version of this script was inspired by the procedure found at
 http://encina.northwestern.edu/index.php/Cif_to_VASP
+I added a better CIF parsing routine using the PyCifRW library.
+While this version of the script (to be referred to as the GULP backend) 
+still works great, it has very many dependencies.
 
-## Installation
+In order to simplify things, I first looked into CCTBX, and later ASE,
+both powerful Python packages, with ASE being the simplest one to install
+and use.
 
-This script is NOT self-contained. It makes use of external 
-programs and python libraries. Please make sure you have installed
-recent versions of the following software:
+### ASE
+
+The excellent ASE package, available from https://wiki.fysik.dtu.dk/ase/,
+almost eliminates the need for this script, since converting a file is done with three lines of code:
+
+    from ase import io
+    atoms = io.read(jobname+'.cif')
+    atoms.write('POSCAR', format = 'vasp')
+
+Using other backends is recommended if you run into problems with ASE's 
+CIF parsing, or want direct coordinates (ASE writes cartesian).
+
+### GULP 
+
+This backend will give slightly more feedback during the conversion, and
+will provide a warning if fractional occupancies are detected. 
+It will write direct coordinates.
+
+Requirements:
 
  *  GULP: 
     https://www.ivec.org/gulp/
@@ -25,27 +52,20 @@ recent versions of the following software:
     http://pycifrw.berlios.de/ 
     (older versions are not likely to work):
 
-## Optional packages 
-
-It would be preferable to get rid of the dependency on GULP and AFLOW, 
-especially GULP which is a quite big package that takes some time to compile.
-
-One alternative I've looked into is the Computational Crystallography Toolbox (CCTBX), 
-which is a very powerful Python package available from http://cctbx.sourceforge.net.
-I ran into some problems implementing CCTBX with my current Python installation, but
-an experimental method `cif2vaspUsingCCTBX` is available as an alternative to
-`cif2vaspUsingGULP`.
-
-I also experimented with ATAT (ezvasp) from http://www.its.caltech.edu/~avdw/atat/ .
-You may try modifying the script to run `cif2vaspUsingGULP(jobname, ezvasp = True)`
-
-## Usage
-  
-    $ cif2vasp filename.cif
-
-## Code outline
+Process:
 
  1.  `prepareGulpInput`: Read CIF file using the PyCifRW library and write GULP in file. 
  3.  `runGulp`: Run GULP to generate all unit cell coordinates based on the spacegroup symmetry operations.
  4.  `runConvasp`: Write XYZ file from GULP out file, then use ACONVASP to convert the cartesian coordinates 
       in the XYZ file into fractional coordinates.
+
+I also experimented with ATAT (ezvasp) from http://www.its.caltech.edu/~avdw/atat/ .
+You may try modifying the script to run `cif2vaspUsingGULP(jobname, ezvasp = True)`
+
+### CCTBX
+
+I looked into using the Computational Crystallography Toolbox (CCTBX), 
+which is a powerful Python package available from http://cctbx.sourceforge.net.
+I did however run into some problems getting CCTBX to play nicely with my current Python 
+installation. The CCTBX support is therefore experimental.
+

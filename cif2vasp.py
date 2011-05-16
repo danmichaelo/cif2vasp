@@ -13,8 +13,12 @@ from CifFile import CifFile
 #from cctbx.array_family import flex
 
 def usage():
-    print "Usage: cif2vasp.py filename\nA filename is a valid .cif-file."
-
+    print "Usage: cif2vasp.py [-v] [-f] [-e gulp|ase|cctbx] filename.cif "
+    print "Options"
+    print " -v, --verbose  increase verbosity"
+    print " -f             try to identify fractional numbers (special positions) "
+    print "                from coordinates with less than six decimals."
+    print " -e, --engine   the backend to use for the conversion (gulp, ase or cctbx)"
 
 def readCifFile(cifFile):
     if not os.path.exists(cifFile):
@@ -154,7 +158,7 @@ def cif2vaspUsingCCTBX(jobname, ezvasp = False):
     print "OK"    
    
 # Requires existing gulp out file for unit cell
-def xyz2vaspUsingGULP(jobname, ezvasp = False):
+def xyz2vaspUsingGULP(jobname, ezvasp = False, verbose = False, auto_fractions = False):
     
     # convasp will convert your atom positions into fractional 
     # and produce a file that looks just like a VASP POSCAR:    
@@ -175,14 +179,16 @@ def xyz2vaspUsingGULP(jobname, ezvasp = False):
         os.rename(jobname+'.convasp.out','POSCAR')
     
     
-def cif2vaspUsingGULP(jobname, ezvasp = False):
+def cif2vaspUsingGULP(jobname, ezvasp = False, verbose = False, auto_fractions = False):
 
     prepareGulpInput(
         cifFile = jobname + '.cif', 
         gulpFile = jobname + '.gulp.in',
-        jobName = jobname
+        jobName = jobname,
+        verbose = verbose,
+        auto_fractions = auto_fractions
     )
-    runGulp(jobname)
+    runGulp(jobname, verbose)
     
     # convasp will convert your atom positions into fractional 
     # and produce a file that looks just like a VASP POSCAR:    
@@ -190,7 +196,8 @@ def cif2vaspUsingGULP(jobname, ezvasp = False):
         jobName = jobname,
         gulpOutputFile = jobname + '.gulp.out',
         xyzFile = jobname+'.xyz',
-        ezvaspStyle = ezvasp
+        ezvaspStyle = ezvasp,
+        verbose = verbose
     )
     
     if ezvasp:
@@ -201,7 +208,16 @@ def cif2vaspUsingGULP(jobname, ezvasp = False):
         sys.stdout.write("done\n")
     else:
         os.rename(jobname+'.convasp.out','POSCAR')
-    
+
+def cif2vaspUsingASE(jobname):
+    """
+    ASE seems to do an excellent job with reading cif's.
+    It will write out the coordinates in cartesian coordinates.
+    """
+    from ase import io
+    atoms = io.read(jobname+'.cif')
+    atoms.write('POSCAR', format = 'vasp')
+
 
 def prepareEzvaspInput(jobname):
 
@@ -237,7 +253,7 @@ def findLinesContaining(lines, str):
 
 # === CONVASP ======================================================================
 
-def runConvasp(gulpOutputFile, xyzFile, jobName, ezvaspStyle = True): 
+def runConvasp(gulpOutputFile, xyzFile, jobName, ezvaspStyle = True, verbose = False): 
     """
     Example file:
         mgh2
@@ -295,8 +311,9 @@ def runConvasp(gulpOutputFile, xyzFile, jobName, ezvaspStyle = True):
         atomCount += 1
     atomCounts.append(str(atomCount)) # store the count of the last atom type
     
-    for i in range(len(atomTypes)):
-        print "  found %s atoms of type %s" % (atomCounts[i],atomTypes[i])
+    if verbose:
+        for i in range(len(atomTypes)):
+            print "  found %s atoms of type %s" % (atomCounts[i],atomTypes[i])
     
     convaspInput = [jobname,'1']
     convaspInput.extend([' '.join(v) for v in latVec])
@@ -304,7 +321,8 @@ def runConvasp(gulpOutputFile, xyzFile, jobName, ezvaspStyle = True):
     convaspInput.extend(atoms)
     stdin = '\n'.join(convaspInput)
 
-    sys.stdout.write("Converting to POSCAR format using aconvasp... ")  
+    if verbose:
+        print "Converting to POSCAR format using aconvasp... "
     p = subprocess.Popen(['aconvasp','--direct'], 
             stdin = subprocess.PIPE, 
             stdout = file(jobname+'.convasp.out',"w"),
@@ -314,12 +332,11 @@ def runConvasp(gulpOutputFile, xyzFile, jobName, ezvaspStyle = True):
         print "\n" + p[1]
         print "See "+jobname+".convasp.out for more details"
         exit()
-    sys.stdout.write("done\n")
     
 
 # === GULP ======================================================================
 
-def prepareGulpInput(cifFile, gulpFile, jobName): 
+def prepareGulpInput(cifFile, gulpFile, jobName, verbose = False, auto_fractions = False): 
     """
     Example file:
     mgh2
@@ -337,13 +354,15 @@ def prepareGulpInput(cifFile, gulpFile, jobName):
         raise IOError("CIF file '%s' was not found!" % (cifFile))
     
     cf = CifFile(cifFile)
-    print "------------------------------------------------------------------"
+    if verbose:
+        print "------------------------------------------------------------------"
     if len(cf) != 1:
         raise StandardError("The cif file contains %i data blocks, while one was expected")
         # A cif file can contain several "datablocks" that each start
         # with "data_".
     
-    print "Reading data block:",cf.keys()[0]
+    if verbose:
+        print "Reading data block '%s'..." % (cf.keys()[0])
     cb = cf[cf.keys()[0]]                               # open the first block
     AA = float(re.match('([0-9.]*)',cb['_cell_length_a']).group(0))
     BB = float(re.match('([0-9.]*)',cb['_cell_length_b']).group(0))
@@ -362,17 +381,19 @@ def prepareGulpInput(cifFile, gulpFile, jobName):
     else:
         print "WARNING: No space group specified. Assuming P1."
         SG = 1
-    
-   
+           
+
+    # CCTBX:
     #unit_cell = uctbx.unit_cell([AA,BB,CC,alpha,beta,gamma])
     #space_group_info = sgtbx.space_group_info(symbol=cb['_symmetry_space_group_name_H-M'])
-    #crystal_symmetry = crystal.symmetry(unit_cell=unit_cell,space_group_info=space_group_info)
-    
+    #crystal_symmetry = crystal.symmetry(unit_cell=unit_cell,space_group_info=space_group_info)    
     #print "CIF file read successfully:"
     #crystal_symmetry.show_summary()   
-    print " "
-    #print "  Space group:",SG
-    #print "  a=%s, b=%s, c=%s, alpha=%s, beta=%s, gamma=%s" % (AA,BB,CC,alpha,beta,gamma)
+
+    if verbose:
+        print "  Space group:",SG
+        print "  a=%s, b=%s, c=%s, alpha=%s, beta=%s, gamma=%s" % (AA,BB,CC,alpha,beta,gamma)
+    
     atomTypes = []
     atoms = ''
     fracOccFound = False
@@ -380,9 +401,9 @@ def prepareGulpInput(cifFile, gulpFile, jobName):
     atoms = ""
 
     # The coordinates of the atom (_atom_site_fract_x/y/z) may have 
-    # a last digit in parenthesis, like "0.6636(7)". Therefore we
+    # a last digit in parenthesis, like "-0.6636(7)". Therefore we
     # extract the part consisting of only digits and a decimal separator:
-    coordsMatch = re.compile('[0-9.]*');
+    coordsMatch = re.compile('[0-9.-]*');
 
     for atom in cb.GetLoop('_atom_site_label'):
         atomKeys = dir(atom)
@@ -394,7 +415,7 @@ def prepareGulpInput(cifFile, gulpFile, jobName):
             atomType = m.group(0)
 
         if '_atom_site_occupancy' in atomKeys:
-            occ = float(atom._atom_site_occupancy)
+            occ = float(coordsMatch.match(atom._atom_site_occupancy).group())
             if not occ == 1.0:
                 if not fracOccFound: 
                     print " "
@@ -412,23 +433,30 @@ def prepareGulpInput(cifFile, gulpFile, jobName):
             atomTypes.append(atomType+' at '+atom._atom_site_symmetry_multiplicity+atom._atom_site_Wyckoff_symbol)
         else:
             atomTypes.append(atomType)
+
+        atomX = coordsMatch.match(atom._atom_site_fract_x).group()
+        atomY = coordsMatch.match(atom._atom_site_fract_y).group()
+        atomZ = coordsMatch.match(atom._atom_site_fract_z).group()
         
-        atomPos = [atom._atom_site_fract_x, atom._atom_site_fract_y, atom._atom_site_fract_z]
-        for p in atomPos:
-            pp = p.split(".")
+        atomPos = [atomX, atomY, atomZ]
+        for i in range(3):
+            pp = atomPos[i].split(".")
             if len(pp) is 2:
-                decimals = p.split(".")[1]
-                if len(decimals) > 3 and len(decimals) < 6 and decimals[0] == decimals[1] and decimals[-1] != "0":
-                    print "\n  ---------------------\n"\
-                        + "  Warning: If the fractional coordinate "+p+" is a recurring decimal, such as 1/3,\n" \
-                        + "    then it is necessary to specify this value to six decimal places to be sure of \n" \
-                        + "    it being recognised correctly as a spcecial position.\n  ------------------" 
-		
-        atomX = float(coordsMatch.match(atom._atom_site_fract_x).group())
-        atomY = float(coordsMatch.match(atom._atom_site_fract_y).group())
-        atomZ = float(coordsMatch.match(atom._atom_site_fract_z).group())
+                decimals = pp[1]
+                if len(decimals) > 3 and len(decimals) < 6 and decimals[0] == decimals[1] and decimals[0] == decimals[2] and decimals[-1] != "0":
+                    if auto_fractions:
+                        oldPos = atomPos[i]
+                        atomPos[i] = "%.6f" % (float(eval('1.*'+float2fraction(atomPos[i]))))
+                        print "  Notice: Converted %s into %s" %(oldPos,atomPos[i])
+                    else:
+                        print "\n"\
+                            + "  ! Warning: The coordinate "+atomPos[i]+" looks similar to the fraction %s, but\n" % float2fraction(atomPos[i]) \
+                            + "  !   has insufficient decimals to be recognized as so by GULP. If you want\n" \
+                            + "  !   this coordinate to be recognized as a special high-symmetry position,\n" \
+                            + "  !   you need to specify at least six digits. If you run cif2vasp with the \n" \
+                            + "  !   -f switch, cif2vasp will try to add the necessary decimals automaticly."		
         
-        atoms += "%s %f %f %f %f %f\n" % (atomType, atomX, atomY, atomZ, 0.0, occ)
+        atoms += "%s %s %s %s %f %f\n" % (atomType, atomPos[0], atomPos[1], atomPos[2], 0.0, occ)
         firstAtom = False
 
     if fracOccFound: 
@@ -436,7 +464,8 @@ def prepareGulpInput(cifFile, gulpFile, jobName):
         print "ERROR: Fractional occupancies are not currently supported.\n"
         exit()
     
-    print "  Atom types: " + ', '.join(atomTypes)
+    if verbose:
+        print "  Atom types: " + ', '.join(atomTypes)
     
     gulpFile = open(gulpFile,'w')       #Create and write the GULP  
     gulpFile.writelines([jobName+'\n',
@@ -449,9 +478,23 @@ def prepareGulpInput(cifFile, gulpFile, jobName):
         'output xyz '+jobName+'\n'
     ])
 
-def runGulp(jobname):
-    sys.stdout.write("Prepare primitive cell in xyz format using Gulp... ") 
-    sys.stdout.flush()
+# A probably not very robust function to convert a float like "0.333" to a fraction "1/3"
+def float2fraction(f):
+    f = float(f)
+    num=1.                  # Start with 1 as numerator
+    den=num/f               # Find denominator
+    r=den%1
+    if abs(r) > 1e-2:       # If denominator is decimal
+        fac=1./r
+        num *= fac          # Scale numerator..
+        den *= fac          # .. and denominator
+    
+    return "%d/%d" % (round(num),round(den))
+
+
+def runGulp(jobname, verbose = False):
+    if verbose:
+        print "Prepare primitive cell in xyz format using GULP... "
     p = subprocess.Popen("gulp", 
         stdin = file(jobname+'.gulp.in'), 
         stdout = file(jobname+'.gulp.out',"w"),
@@ -462,28 +505,50 @@ def runGulp(jobname):
         print "See "+jobname+".gulp.out for more details"
         exit()
 
-    sys.stdout.write("done\n")
-
+    if verbose:
+        os.system("grep 'Crystal family' '%s'" % (jobname+'.gulp.out'))
+        os.system("grep 'Space group' '%s'" % (jobname+'.gulp.out'))
 
 if __name__ == "__main__":
     try:    #parse the arguments
-        opts, args = getopt.getopt(sys.argv[1:], "h:v", ["help", "output="])
+        opts, args = getopt.getopt(sys.argv[1:], "vfe:", ['engine='])
     except getopt.GetoptError:
         usage()
         sys.exit(2)
     if len(args) == 0:
         usage()
-        sys.exit(2)
+        sys.exit(2)    
+
+    #print opts
+    #print args
+
+    auto_fractions = False
+    verbose = False
+    engine = 'gulp'
+    for opt in opts:
+        if opt[0] == '-v':
+            verbose = True
+        elif opt[0] == '-f':
+            auto_fractions = True
+        elif opt[0] == '--engine' or opt[0] == '-e':
+            engine = opt[1]
+
     # print opts, args
     filename = args[0]
     if filename[-4:] == '.xyz':
         jobname = filename[0:-4]
         #cif2vaspUsingCCTBX(jobname)
-        xyz2vaspUsingGULP(jobname)
+        xyz2vaspUsingGULP(jobname, verbose = verbose, auto_fractions = auto_fractions)
     elif filename[-4:] == '.cif':
         jobname = filename[0:-4]
-        #cif2vaspUsingCCTBX(jobname)
-        cif2vaspUsingGULP(jobname)
+        if engine == 'cctbx':
+            cif2vaspUsingCCTBX(jobname)
+        elif engine == 'gulp':
+            cif2vaspUsingGULP(jobname, verbose = verbose, auto_fractions = auto_fractions)
+        elif engine == 'ase':
+            cif2vaspUsingASE(jobname)
+        else:
+            print "Error: unknown engine specified."
     else:
         print "The input file must have the file-ending '.cif'"
         usage()
