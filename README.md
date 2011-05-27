@@ -29,13 +29,15 @@ almost eliminates the need for this script, since converting a file actually is 
     atoms.write('POSCAR', format = 'vasp')
 
 Using other backends is recommended if you run into problems with ASE's 
-CIF parsing, or want direct coordinates (ASE writes cartesian).
+CIF parsing, or want direct coordinates directly (ASE writes cartesian).
 
 ### GULP 
 
 This backend will give slightly more feedback during the conversion, and
-will provide a warning if fractional occupancies are found. 
-It will write direct coordinates.
+will provide a warning if fractional occupancies are found, but the 
+numerical noise is about 1e-10, compared to 1e-16 for ASE because of the
+intermediate XYZ file with only 10 digits.
+The GULP process will write direct coordinates.
 
 Requirements:
 

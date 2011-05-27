@@ -369,9 +369,9 @@ def prepareGulpInput(cifFile, gulpFile, jobName, verbose = False, auto_fractions
     if verbose:
         print "Reading data block '%s'..." % (cf.keys()[0])
     cb = cf[cf.keys()[0]]                               # open the first block
-    AA = float(re.match('([0-9.]*)',cb['_cell_length_a']).group(0))
-    BB = float(re.match('([0-9.]*)',cb['_cell_length_b']).group(0))
-    CC = float(re.match('([0-9.]*)',cb['_cell_length_c']).group(0))
+    AA = float(re.match('([0-9.e]*)',cb['_cell_length_a']).group(0))
+    BB = float(re.match('([0-9.e]*)',cb['_cell_length_b']).group(0))
+    CC = float(re.match('([0-9.e]*)',cb['_cell_length_c']).group(0))
     alpha = float(cb['_cell_angle_alpha'])
     beta = float(cb['_cell_angle_beta'])
     gamma = float(cb['_cell_angle_gamma'])    
@@ -408,7 +408,7 @@ def prepareGulpInput(cifFile, gulpFile, jobName, verbose = False, auto_fractions
     # The coordinates of the atom (_atom_site_fract_x/y/z) may have 
     # a last digit in parenthesis, like "-0.6636(7)". Therefore we
     # extract the part consisting of only digits and a decimal separator:
-    coordsMatch = re.compile('[0-9.-]*');
+    coordsMatch = re.compile('[0-9.e-]*');
 
     for atom in cb.GetLoop('_atom_site_label'):
         atomKeys = dir(atom)
