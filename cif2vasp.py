@@ -5,7 +5,10 @@
 # See README.md
 #
 
-import getopt, sys, os, re, subprocess
+import sys, os, re
+import subprocess
+from optparse import OptionParser
+
 #from cctbx import uctbx, sgtbx, crystal
 #from cctbx import xray
 #from cctbx import crystal
@@ -512,42 +515,30 @@ def runGulp(jobname, verbose = False):
         os.system("grep 'Space group' '%s'" % (jobname+'.gulp.out'))
 
 if __name__ == "__main__":
-    try:    #parse the arguments
-        opts, args = getopt.getopt(sys.argv[1:], "vfe:", ['engine='])
-    except getopt.GetoptError:
-        usage()
-        sys.exit(2)
-    if len(args) == 0:
-        usage()
-        sys.exit(2)    
 
-    #print opts
-    #print args
-
-    auto_fractions = False
-    verbose = False
-    engine = 'gulp'
-    for opt in opts:
-        if opt[0] == '-v':
-            verbose = True
-        elif opt[0] == '-f':
-            auto_fractions = True
-        elif opt[0] == '--engine' or opt[0] == '-e':
-            engine = opt[1]
-
-    # print opts, args
+    # Parse cmd line args
+    parser = OptionParser( usage = "usage: %prog [options] filename.cif" )
+    pdf_file = os.path.splitext(os.path.basename(sys.argv[0]))[0] + '.pdf'
+    parser.add_option('-v', '--verbose', action='store_true', dest = 'verbose', default = False, help = 'increase verbosity')
+    parser.add_option('-f', action='store_true', dest = 'auto_fractions', default = False, help = 'try to identify fractional numbers (special positions) from coordinates with less than six decimals.')
+    parser.add_option('-e', '--engine', dest = 'engine', default = 'ase', help = 'the backend to use for the conversion (gulp, ase or cctbx)')
+    (options, args) = parser.parse_args()
+    if len(args) != 1:
+        print "No filename given. Run %s -h for help" % (parser.get_prog_name())
+        sys.exit(1)
+    
     filename = args[0]
     if filename[-4:] == '.xyz':
         jobname = filename[0:-4]
         #cif2vaspUsingCCTBX(jobname)
-        xyz2vaspUsingGULP(jobname, verbose = verbose, auto_fractions = auto_fractions)
+        xyz2vaspUsingGULP(jobname, verbose = options.verbose, auto_fractions = options.auto_fractions)
     elif filename[-4:] == '.cif':
         jobname = filename[0:-4]
-        if engine == 'cctbx':
+        if options.engine == 'cctbx':
             cif2vaspUsingCCTBX(jobname)
-        elif engine == 'gulp':
-            cif2vaspUsingGULP(jobname, verbose = verbose, auto_fractions = auto_fractions)
-        elif engine == 'ase':
+        elif options.engine == 'gulp':
+            cif2vaspUsingGULP(jobname, verbose = options.verbose, auto_fractions = options.auto_fractions)
+        elif options.engine == 'ase':
             cif2vaspUsingASE(jobname)
         else:
             print "Error: unknown engine specified."
